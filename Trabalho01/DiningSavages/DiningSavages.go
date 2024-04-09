@@ -6,6 +6,10 @@ import (
 )
 
 const (
+	Red = "\033[31m"
+	Green = "\033[32m"
+	Yellow = "\033[33m"
+	Reset = "\033[0m"
 	/* Number of servings in the pot */
 	M = 5
 )
@@ -17,10 +21,6 @@ var (
 	fullPot = NewSemaphore(0)
 )
 
-func putServingsInPot() {
-	fmt.Println("\033[34m", "Putting servings in pot...", "\033[0m")
-}
-
 func Cook() {
 	for {
 		emptyPot.Wait()
@@ -29,39 +29,61 @@ func Cook() {
 	}
 }
 
-func getServingFromPot() {
-	fmt.Println("\033[33m", "Serving...", "\033[0m")
+func putServingsInPot() {
+	PrintCook("Putting servings in pot...")
 }
 
-func eat() {
-	fmt.Println("\033[32m", "Eating...", "\033[0m")
-}
-
-func Savage() {
+func Savage(id string) {
 	for {
 		mutex.Wait()
 		if servings == 0 {
-			fmt.Println("\033[31m", "Pot is empty, waking up the cook...", "\033[0m")
+			wakeUpCook(id)
 			emptyPot.Signal()
 			fullPot.Wait()
 			servings = M
 		}
 		servings--
-		getServingFromPot()
+		getServingFromPot(id)
 		mutex.Signal()
-		eat()
+		eat(id)
 	}
+}
+
+func wakeUpCook(id string) {
+	PrintSavage(fmt.Sprintf("%s - Pot is empty, I'll wake up the cook...", id), true)
+}
+
+func getServingFromPot(id string) {
+	PrintSavage(fmt.Sprintf("%s is serving...", id), false)
+}
+
+func eat(id string) {
+	PrintSavage(fmt.Sprintf("%s is eating...", id), false)
 }
 
 func main() {
 	fmt.Println("Dining Savages")
 	for i := 0; i < 1; i++ {
+		fmt.Println("Making cook ", i)
 		go Cook()
 	}
 	for i := 0; i < 5; i++ {
-		go Savage()
+		fmt.Println("Making savage ", i)
+		go Savage(fmt.Sprintf("%d", i))
 	}
-	<- time.After(5 * time.Millisecond)
+	<- time.After(50 * time.Millisecond)
+}
+
+func PrintCook(s string) {
+	fmt.Println(Red + s + Reset)
+}
+
+func PrintSavage(s string, alert bool) {
+	if alert {
+		fmt.Println(Yellow + s + Reset)
+	} else {
+		fmt.Println(Green + s + Reset)
+	}
 }
 
 type Semaphore struct {
