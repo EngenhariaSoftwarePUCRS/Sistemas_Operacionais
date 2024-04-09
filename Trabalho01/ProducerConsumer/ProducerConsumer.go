@@ -7,14 +7,20 @@ import (
 )
 
 const (
+	N          = 5 // Thread Count
 	QUEUE_SIZE = 50
 )
 
 var (
-	mutex *Semaphore = NewSemaphore(1)
-	items *Semaphore = NewSemaphore(0)
+	mutex  *Semaphore = NewSemaphore(1)
+	items  *Semaphore = NewSemaphore(0)
 	spaces *Semaphore = NewSemaphore(QUEUE_SIZE)
-	queue Queue = make(Queue, 0, QUEUE_SIZE)
+	queue  Queue      = make(Queue, 0, QUEUE_SIZE)
+
+	// volatile bool entering[0..N] := 0
+	entering [N]bool
+	// volatile int number[0..N] := 0
+	number [N]int
 )
 
 func Producer() {
@@ -23,9 +29,9 @@ func Producer() {
 		item := rand.New(rand.NewSource(time.Now().UnixNano())).Intn(99)
 		spaces.Wait()
 		mutex.Wait()
-			fmt.Println("\033[32m", "Fila Critical Section: ", queue, "\033[0m")
-			queue.Enqueue(item)
-			fmt.Println("\033[32m", "Adicionado: ", item, "\033[0m")
+		fmt.Println("\033[32m", "Fila Critical Section: ", queue, "\033[0m")
+		queue.Enqueue(item)
+		fmt.Println("\033[32m", "Adicionado: ", item, "\033[0m")
 		mutex.Signal()
 		items.Signal()
 	}
@@ -36,9 +42,9 @@ func Consumer() {
 		fmt.Println("\033[31m", "Consumindo...", "\033[0m")
 		items.Wait()
 		mutex.Wait()
-			fmt.Println("\033[31m", "Fila Critical Section: ", queue, "\033[0m")
-			item := queue.Dequeue()
-			fmt.Println("\033[31m", "Removido: ", item, "\033[0m")
+		fmt.Println("\033[31m", "Fila Critical Section: ", queue, "\033[0m")
+		item := queue.Dequeue()
+		fmt.Println("\033[31m", "Removido: ", item, "\033[0m")
 		mutex.Signal()
 		spaces.Signal()
 	}
@@ -46,13 +52,20 @@ func Consumer() {
 
 func main() {
 	fmt.Printf("Producer Consumer with Queue Size %d\n", QUEUE_SIZE)
-	for i := 0; i < 1; i++ {
-		go Producer()
-	}
-	for i := 0; i < 5; i++ {
-		go Consumer()
-	}
-	<- time.After(5 * time.Millisecond)
+	// for i := 0; i < 1; i++ {
+	// 	go Producer()
+	// }
+	// for i := 0; i < 5; i++ {
+	// 	go Consumer()
+	// }
+	bay(number)
+	go func() { lock(1) }()
+	go func() { lock(3) }()
+	go func() { lock(2) }()
+	go func() { unlock(1) }()
+	go func() { unlock(3) }()
+	bay(number)
+	<-time.After(5 * time.Millisecond)
 }
 
 type Queue []int
@@ -71,6 +84,49 @@ func (q *Queue) Dequeue() int {
 	item := (*q)[0]
 	*q = (*q)[1:]
 	return item
+}
+
+func bay(slice [N]int) {
+	fmt.Print("Numbers: ")
+	fmt.Print("[")
+	for i := 0; i < len(number); i++ {
+		fmt.Printf("%d ", number[i])
+	}
+	fmt.Println("\b]")
+}
+
+func max(slice [N]int) int {
+	if len(slice) == 0 {
+		return -1
+	}
+
+	max := slice[0]
+	for i := 1; i < len(slice); i++ {
+		if slice[i] > max {
+			max = slice[i]
+		}
+	}
+	return max
+}
+
+func lock(i int) {
+	entering[i] = true
+	number[i] = 1 + max(number)
+	entering[i] = false
+	for j := 0; j < N; j++ {
+		for entering[j] {
+			// Wait until thread j receives its number:
+		}
+		for number[j] != 0 && (number[j] < number[i] || (number[j] == number[i] && j < i)) {
+			// Wait until all threads with smaller numbers or with the same
+			// number, but with higher priority, finish their work
+		}
+	}
+	fmt.Printf("lock(%d) - %d\n", i, max(number))
+}
+
+func unlock(i int) {
+	number[i] = 0
 }
 
 type Semaphore struct {
