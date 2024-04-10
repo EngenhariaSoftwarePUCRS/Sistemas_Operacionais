@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"time"
 )
 
@@ -12,60 +13,67 @@ const (
 )
 
 var (
-	mutex  *Semaphore = NewSemaphore(1)
-	items  *Semaphore = NewSemaphore(0)
-	spaces *Semaphore = NewSemaphore(QUEUE_SIZE)
-	queue  Queue      = make(Queue, 0, QUEUE_SIZE)
-
-	// volatile bool entering[0..N] := 0
-	entering [N]bool
-	// volatile int number[0..N] := 0
-	number [N]int
+	criticalSection  *Mutex = NewMutex()
+	items  *Mutex = NewMutex()
+	emptyQueue *Mutex = NewMutex()
+	queue  Queue  = make(Queue, 0, QUEUE_SIZE)
 )
 
-func Producer() {
+func Producer(id int) {
 	for {
-		fmt.Println("\033[32m", "Produzindo...", "\033[0m")
+		fmt.Println("\033[32m", "Pronto para produzir...", "\033[0m")
 		item := rand.New(rand.NewSource(time.Now().UnixNano())).Intn(99)
-		spaces.Wait()
-		mutex.Wait()
-		fmt.Println("\033[32m", "Fila Critical Section: ", queue, "\033[0m")
+		emptyQueue.Lock(id)
+		criticalSection.Lock(id)
 		queue.Enqueue(item)
-		fmt.Println("\033[32m", "Adicionado: ", item, "\033[0m")
-		mutex.Signal()
-		items.Signal()
+		fmt.Println("\033[32m",
+			id, "- Adicionando: ", item, "\n",
+			id, "- Fila Critical Section: ", queue, "\n",
+			id, "- TimeStamp: ", CurrentTimeStamp(), "\n",
+		"\033[0m")
+		criticalSection.UnlockOthers(id)
+		items.UnlockOthers(id)
 	}
 }
 
-func Consumer() {
+// WORKAROUND
+// This is a way of showing the user the aproximate time the operation was done contrary to the time the operation was printed
+// This is a workaround because, sometimes, a thread has already inserted/removed an item from the queue but the OS gives the CPU to another thread to remove another item, so printing goes out of order
+func CurrentTimeStamp() string {
+	milliseconds := time.Now().UnixMilli()
+	milliseconds = milliseconds % 10_000_000
+	return fmt.Sprint(milliseconds)
+}
+
+func Consumer(idProducer int, idConsumer int) {
 	for {
-		fmt.Println("\033[31m", "Consumindo...", "\033[0m")
-		items.Wait()
-		mutex.Wait()
-		fmt.Println("\033[31m", "Fila Critical Section: ", queue, "\033[0m")
-		item := queue.Dequeue()
-		fmt.Println("\033[31m", "Removido: ", item, "\033[0m")
-		mutex.Signal()
-		spaces.Signal()
+		items.Lock(idConsumer)
+		fmt.Println("\033[34m", idConsumer, "- Tentando consumir...", "\033[0m")
+		criticalSection.Lock(idConsumer)
+		previousQueue := queue
+		item, success := queue.Dequeue()
+		if success {
+			fmt.Println("\033[31m",
+				idConsumer, "- Anterior: ", previousQueue, "\n",
+				idConsumer, "- Removido: ", item, "\n",
+				idConsumer, "- New:", queue, "\n",
+				idConsumer, "- TimeStamp: ", CurrentTimeStamp(), "\n",
+			"\033[0m")
+		}
+		criticalSection.UnlockOthers(idConsumer)
+		emptyQueue.Unlock(idProducer)
 	}
 }
 
 func main() {
+	runtime.GOMAXPROCS(N)
 	fmt.Printf("Producer Consumer with Queue Size %d\n", QUEUE_SIZE)
-	// for i := 0; i < 1; i++ {
-	// 	go Producer()
-	// }
-	// for i := 0; i < 5; i++ {
-	// 	go Consumer()
-	// }
-	bay(number)
-	go func() { lock(1) }()
-	go func() { lock(3) }()
-	go func() { lock(2) }()
-	go func() { unlock(1) }()
-	go func() { unlock(3) }()
-	bay(number)
-	<-time.After(5 * time.Millisecond)
+	producerId := 0
+	go Producer(producerId)
+	for i := 1; i < N; i++ {
+		go Consumer(producerId, i)
+	}
+	<-time.After(300 * time.Millisecond)
 }
 
 type Queue []int
@@ -77,89 +85,84 @@ func (q *Queue) Enqueue(item int) {
 	*q = append(*q, item)
 }
 
-func (q *Queue) Dequeue() int {
+func (q *Queue) Dequeue() (head int, success bool) {
 	if len(*q) == 0 {
-		return -1
+		return -1, false
 	}
 	item := (*q)[0]
 	*q = (*q)[1:]
-	return item
+	return item, true
 }
 
-func bay(slice [N]int) {
-	fmt.Print("Numbers: ")
+type Mutex struct {
+	// volatile bool entering[0..N] := 0
+	entering [N]bool
+	// volatile int number[0..N] := 0
+	number [N]int
+}
+
+func NewMutex() *Mutex {
+	return &Mutex{
+		entering: [N]bool{},
+		number:   [N]int{},
+	}
+}
+
+func (m *Mutex) printEntering() {
+	fmt.Print("Entering: ")
 	fmt.Print("[")
-	for i := 0; i < len(number); i++ {
-		fmt.Printf("%d ", number[i])
+	for i := 0; i < len(m.entering); i++ {
+		fmt.Printf("%d ", m.entering[i])
 	}
 	fmt.Println("\b]")
 }
 
-func max(slice [N]int) int {
-	if len(slice) == 0 {
+func (m *Mutex) PrintNumber() {
+	fmt.Print("Number: ")
+	fmt.Print("[")
+	for i := 0; i < len(m.number); i++ {
+		fmt.Printf("%d ", m.number[i])
+	}
+	fmt.Println("\b]")
+}
+
+func (m *Mutex) maxNumber() int {
+	if len(m.number) == 0 {
 		return -1
 	}
 
-	max := slice[0]
-	for i := 1; i < len(slice); i++ {
-		if slice[i] > max {
-			max = slice[i]
+	max := m.number[0]
+	for i := 1; i < len(m.number); i++ {
+		if m.number[i] > max {
+			max = m.number[i]
 		}
 	}
 	return max
 }
 
-func lock(i int) {
-	entering[i] = true
-	number[i] = 1 + max(number)
-	entering[i] = false
+func (m *Mutex) Lock(i int) {
+	m.entering[i] = true
+	m.number[i] = 1 + m.maxNumber()
+	m.entering[i] = false
 	for j := 0; j < N; j++ {
-		for entering[j] {
+		for m.entering[j] {
 			// Wait until thread j receives its number:
 		}
-		for number[j] != 0 && (number[j] < number[i] || (number[j] == number[i] && j < i)) {
+		for m.number[j] != 0 && (m.number[j] < m.number[i] || (m.number[j] == m.number[i] && j < i)) {
 			// Wait until all threads with smaller numbers or with the same
 			// number, but with higher priority, finish their work
 		}
 	}
-	fmt.Printf("lock(%d) - %d\n", i, max(number))
 }
 
-func unlock(i int) {
-	number[i] = 0
+func (m *Mutex) Unlock(i int) {
+	m.number[i] = 0
 }
 
-type Semaphore struct {
-	v    int           // valor do semaforo: negativo significa proc bloqueado
-	fila chan struct{} // canal para bloquear os processos se v < 0
-	sc   chan struct{} // canal para atomicidade das operacoes wait e signal
-}
-
-func NewSemaphore(init int) *Semaphore {
-	s := &Semaphore{
-		v:    init,                   // valor inicial de creditos
-		fila: make(chan struct{}),    // canal sincrono para bloquear processos
-		sc:   make(chan struct{}, 1), // usaremos este como semaforo para SC, somente 0 ou 1
+func (m *Mutex) UnlockOthers(i int) {
+	for j := 0; j < N; j++ {
+		if j != i {
+			m.number[j] = 0
+		}
 	}
-	return s
-}
-
-func (s *Semaphore) Wait() {
-	s.sc <- struct{}{} // SC do semaforo feita com canal
-	s.v--              // decrementa valor
-	if s.v < 0 {       // se negativo era 0 ou menor, tem que bloquear
-		<-s.sc               // antes de bloq, libera acesso
-		s.fila <- struct{}{} // bloqueia proc
-	} else {
-		<-s.sc // libera acesso
-	}
-}
-
-func (s *Semaphore) Signal() {
-	s.sc <- struct{}{} // entra sc
-	s.v++
-	if s.v <= 0 { // tem processo bloqueado ?
-		<-s.fila // desbloqueia
-	}
-	<-s.sc // libera SC para outra op
 }
