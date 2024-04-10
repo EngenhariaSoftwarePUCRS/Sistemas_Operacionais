@@ -53,11 +53,11 @@ func CurrentTimeStamp() string {
 func Producer(id int) {
 	for {
 		mutex.Lock(id)
-			fmt.Println(CYAN, id, "- Pronto para produzir...", RESET)
+			fmt.Println(YELLOW, id, "- Pronto para produzir...", RESET)
 			item := GetRandom(99)
 			success := queue.Enqueue(item)
 			if success {
-				fmt.Println(CYAN,
+				fmt.Println(GREEN,
 					"\tAdicionando: ", item, "\n",
 					"\tFila Seção Crítica: ", queue, "\n",
 					"\tTimeStamp: ", CurrentTimeStamp(), "\n",
@@ -78,7 +78,7 @@ func Consumer(id int) {
 			previousQueue := queue
 			item, success := queue.Dequeue()
 			if success {
-				fmt.Println(YELLOW,
+				fmt.Println(CYAN,
 					"\tAnterior: ", previousQueue, "\n",
 					"\tRemovido: ", item, "\n",
 					"\tNew: ", queue, "\n",
@@ -96,8 +96,8 @@ func main() {
 	fmt.Println(RESET)
 	fmt.Println(BOLD, "Producer Consumer with: ")
 	fmt.Println(MAGENTA, "\tQueue Size:\t", QUEUE_SIZE)
-	fmt.Println(CYAN, "\t", "Producers: ", "\t", PRODUCERS_COUNT)
-	fmt.Println(YELLOW, "\t", "Consumers: ", "\t", CONSUMERS_COUNT)
+	fmt.Println(GREEN, "\t", "Producers: ", "\t", PRODUCERS_COUNT)
+	fmt.Println(CYAN, "\t", "Consumers: ", "\t", CONSUMERS_COUNT)
 	fmt.Println(RESET)
 
 	for i := 0; i < PRODUCERS_COUNT; i++ {
