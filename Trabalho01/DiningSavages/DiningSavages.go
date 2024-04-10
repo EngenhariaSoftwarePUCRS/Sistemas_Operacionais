@@ -2,88 +2,152 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
+	"runtime"
 	"time"
 )
 
 const (
-	Red = "\033[31m"
-	Green = "\033[32m"
-	Yellow = "\033[33m"
-	Reset = "\033[0m"
-	/* Number of servings in the pot */
-	M = 5
+	COOKS_COUNT = 1
+	SAVAGES_COUNT = 5
+	THREAD_COUNT = COOKS_COUNT + SAVAGES_COUNT
+	SERVINGS_COUNT = 5
+
+	// Console Editing
+
+	BOLD = "\033[1m"
+	RED = "\033[31m"
+	GREEN = "\033[32m"
+	YELLOW = "\033[33m"
+	BLUE = "\033[34m"
+	MAGENTA = "\033[35m"
+	CYAN = "\033[36m"
+	RESET = "\033[0m"
 )
 
 var (
-	servings = M
-	mutex = NewSemaphore(1)
+	servings = SERVINGS_COUNT
+	mutex *Mutex = NewMutex()
 	emptyPot = NewSemaphore(0)
 	fullPot = NewSemaphore(0)
 )
 
-func Cook() {
+// Returns a random integer between 0 and max
+func GetRandom(max int) int {
+	return rand.Intn(max + 1)
+}
+
+// Waits for a random time in milliseconds with 10x a custom multiplier
+func WaitRandom(multiplier int) {
+	time.Sleep(time.Duration(GetRandom(10 * multiplier)) * time.Millisecond)
+}
+
+func Cook(id int) {
 	for {
 		emptyPot.Wait()
-		putServingsInPot()
+		putServingsInPot(id)
+		servings = SERVINGS_COUNT
 		fullPot.Signal()
+		WaitRandom(COOKS_COUNT)
 	}
 }
 
-func putServingsInPot() {
-	PrintCook("Putting servings in pot...")
+func putServingsInPot(id int) {
+	PrintCook(fmt.Sprint("Cook ", id, " is putting servings in pot...", "\n"))
 }
 
-func Savage(id string) {
+func Savage(id int) {
 	for {
-		mutex.Wait()
-		if servings == 0 {
-			wakeUpCook(id)
-			emptyPot.Signal()
-			fullPot.Wait()
-			servings = M
-		}
-		servings--
-		getServingFromPot(id)
-		mutex.Signal()
-		eat(id)
+		WaitRandom(SAVAGES_COUNT)
+		mutex.Lock(id)
+			if servings == 0 {
+				wakeUpCook(id)
+				emptyPot.Signal()
+				fullPot.Wait()
+			}
+			servings--
+			getServingFromPot(id)
+		mutex.Unlock(id)
 	}
 }
 
-func wakeUpCook(id string) {
-	PrintSavage(fmt.Sprintf("%s - Pot is empty, I'll wake up the cook...", id), true)
+func wakeUpCook(id int) {
+	PrintAlert(fmt.Sprint("Savage ", id, "- Pot is empty, I'll wake up the cook...", "\n"))
 }
 
-func getServingFromPot(id string) {
-	PrintSavage(fmt.Sprintf("%s is serving...", id), false)
-}
-
-func eat(id string) {
-	PrintSavage(fmt.Sprintf("%s is eating...", id), false)
+func getServingFromPot(id int) {
+	PrintSavage(fmt.Sprint("Savage ", id, " is serving..."))
 }
 
 func main() {
-	fmt.Println("Dining Savages")
-	for i := 0; i < 1; i++ {
-		fmt.Println("Making cook ", i)
-		go Cook()
+	runtime.GOMAXPROCS(THREAD_COUNT)
+	fmt.Println(RESET)
+	fmt.Println(BOLD, "Dining Savages")
+	fmt.Println(MAGENTA, "\tServings Count:\t", SERVINGS_COUNT)
+	fmt.Println(GREEN, "\t", "Cooks: ", "\t", COOKS_COUNT)
+	fmt.Println(CYAN, "\t", "Savages: ", "\t", SAVAGES_COUNT)
+	fmt.Println(RESET)
+
+	for i := 0; i < COOKS_COUNT; i++ {
+		go Cook(i)
 	}
-	for i := 0; i < 5; i++ {
-		fmt.Println("Making savage ", i)
-		go Savage(fmt.Sprintf("%d", i))
+
+	for i := 0; i < SAVAGES_COUNT; i++ {
+		go Savage(i + COOKS_COUNT)
 	}
-	<- time.After(50 * time.Millisecond)
+
+	// Stops the program after some delay, so the user can see the output
+	<- time.After(250 * time.Millisecond)
 }
 
 func PrintCook(s string) {
-	fmt.Println(Red + s + Reset)
+	fmt.Println(GREEN + s + RESET)
 }
 
-func PrintSavage(s string, alert bool) {
-	if alert {
-		fmt.Println(Yellow + s + Reset)
-	} else {
-		fmt.Println(Green + s + Reset)
+func PrintSavage(s string) {
+	fmt.Println(CYAN + s + RESET)
+}
+
+func PrintAlert(s string) {
+	fmt.Println(RED + s + RESET)
+}
+
+type Mutex struct {
+	number [THREAD_COUNT]int
+}
+
+func NewMutex() *Mutex {
+	return &Mutex{
+		number: [THREAD_COUNT]int{},
 	}
+}
+
+func (m *Mutex) maxNumber() int {
+	if len(m.number) == 0 {
+		return -1
+	}
+
+	max := m.number[0]
+	for i := 1; i < len(m.number); i++ {
+		if m.number[i] > max {
+			max = m.number[i]
+		}
+	}
+	return max
+}
+
+func (m *Mutex) Lock(i int) {
+	m.number[i] = 1 + m.maxNumber()
+	for j := 0; j < THREAD_COUNT; j++ {
+		for m.number[j] != 0 && (m.number[j] < m.number[i] || (m.number[j] == m.number[i] && j < i)) {
+			// Wait until all threads with smaller numbers or with the same
+			// number, but with higher priority, finish their work
+		}
+	}
+}
+
+func (m *Mutex) Unlock(i int) {
+	m.number[i] = 0
 }
 
 type Semaphore struct {
