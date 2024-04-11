@@ -3,15 +3,17 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"runtime"
+	"strconv"
 	"time"
 )
 
 const (
-	COOKS_COUNT = 1
-	SAVAGES_COUNT = 5
-	THREAD_COUNT = COOKS_COUNT + SAVAGES_COUNT
-	SERVINGS_COUNT = 5
+	DEFAULT_COOKS_COUNT = 1
+	DEFAULT_SAVAGES_COUNT = 5
+	DEFAULT_THREAD_COUNT = DEFAULT_COOKS_COUNT + DEFAULT_SAVAGES_COUNT
+	DEFAULT_SERVINGS_COUNT = 5
 
 	// Console Editing
 
@@ -26,74 +28,118 @@ const (
 )
 
 var (
-	servings = SERVINGS_COUNT
-	mutex *Mutex = NewMutex()
+	// Savages Count
+	N uint
+	// Max Servings Count
+	maxServingsCount uint
+	// Variable Servings Count
+	M uint
+	// Cooks Count
+	L uint
+	// Threads Count
+	threadCount uint
+
+	mutex *Mutex
 	emptyPot = NewSemaphore(0)
 	fullPot = NewSemaphore(0)
 )
 
+// Returns the argument at the given index or the default value if it was not provided
+// Exits the program if the argument is not a non-negative integer
+func getArg(index int, defaul uint) uint {
+	if len(os.Args) > index {
+		value, err := strconv.Atoi(os.Args[index])
+		if err != nil || value < 0 {
+			fmt.Printf(
+				"%s Invalid argument %d: %d. Must be a non-negative integer. %s\n",
+				RED, index, value, RESET,
+			)
+			os.Exit(1)
+		}
+		return uint(value)
+	}
+	return defaul
+}
+
 // Returns a random integer between 0 and max
-func GetRandom(max int) int {
-	return rand.Intn(max + 1)
+func GetRandom(max uint) int {
+	return rand.Intn(int(max) + 1)
 }
 
 // Waits for a random time in milliseconds with 10x a custom multiplier
-func WaitRandom(multiplier int) {
+func WaitRandom(multiplier uint) {
 	time.Sleep(time.Duration(GetRandom(10 * multiplier)) * time.Millisecond)
 }
 
-func Cook(id int) {
+func Cook(id uint) {
 	for {
 		emptyPot.Wait()
 		putServingsInPot(id)
-		servings = SERVINGS_COUNT
+		M = maxServingsCount
 		fullPot.Signal()
-		WaitRandom(COOKS_COUNT)
+		WaitRandom(DEFAULT_COOKS_COUNT)
 	}
 }
 
-func putServingsInPot(id int) {
+func putServingsInPot(id uint) {
 	PrintCook(fmt.Sprint("Cook ", id, " is putting servings in pot...", "\n"))
 }
 
-func Savage(id int) {
+func Savage(id uint) {
 	for {
-		WaitRandom(SAVAGES_COUNT)
+		WaitRandom(DEFAULT_SAVAGES_COUNT)
 		mutex.Lock(id)
-			if servings == 0 {
+			if M == 0 {
 				wakeUpCook(id)
 				emptyPot.Signal()
 				fullPot.Wait()
 			}
-			servings--
+			M--
 			getServingFromPot(id)
 		mutex.Unlock(id)
 	}
 }
 
-func wakeUpCook(id int) {
+func wakeUpCook(id uint) {
 	PrintAlert(fmt.Sprint("Savage ", id, "- Pot is empty, I'll wake up the cook...", "\n"))
 }
 
-func getServingFromPot(id int) {
+func getServingFromPot(id uint) {
 	PrintSavage(fmt.Sprint("Savage ", id, " is serving..."))
 }
 
 func main() {
-	runtime.GOMAXPROCS(THREAD_COUNT)
-	fmt.Println(RESET)
-	fmt.Println(BOLD, "Dining Savages")
-	fmt.Println(MAGENTA, "\tServings Count:\t", SERVINGS_COUNT)
-	fmt.Println(GREEN, "\t", "Cooks: ", "\t", COOKS_COUNT)
-	fmt.Println(CYAN, "\t", "Savages: ", "\t", SAVAGES_COUNT)
+	fmt.Println(RESET, BOLD)
+	fmt.Println("=====", "Dining Savages", "=====")
+
+	if len(os.Args) < 4 {
+		fmt.Println("\nUseful arguments missing")
+		fmt.Printf("Usage: go run DiningSavages.go %s <N = number of savages> %s <M = number of servings> %s <Optional: L = number of cooks>\n", CYAN, MAGENTA, GREEN)
+		fmt.Print(RESET, BOLD)
+		fmt.Printf("Example: go run DiningSavages.go %s %d %s %d %s %d\n", CYAN, DEFAULT_SAVAGES_COUNT, MAGENTA, DEFAULT_SERVINGS_COUNT, GREEN, DEFAULT_COOKS_COUNT)
+		fmt.Print(RESET, BOLD)
+		fmt.Println("Using default values to fill non-provided arguments")
+	}
+	N = getArg(1, DEFAULT_SAVAGES_COUNT)
+	maxServingsCount = getArg(2, DEFAULT_SERVINGS_COUNT)
+	M = maxServingsCount
+	L = getArg(3, DEFAULT_COOKS_COUNT)
+	threadCount = N + L
+	mutex = NewMutex(threadCount)
+
+	runtime.GOMAXPROCS(DEFAULT_THREAD_COUNT)
+	fmt.Println(CYAN, "\t", "Savages: ", "\t", N)
+	fmt.Println(MAGENTA, "\tServings Count:\t", M)
+	fmt.Println(GREEN, "\t", "Cooks: ", "\t", L)
 	fmt.Println(RESET)
 
-	for i := 0; i < COOKS_COUNT; i++ {
+	var i uint
+	for i = 0; i < L; i++ {
 		go Cook(i)
 	}
 
-	for i := 0; i < SAVAGES_COUNT; i++ {
-		go Savage(i + COOKS_COUNT)
+	for i = 0; i < N; i++ {
+		go Savage(i + DEFAULT_COOKS_COUNT)
 	}
 
 	// Stops the program after some delay, so the user can see the output
@@ -113,12 +159,12 @@ func PrintAlert(s string) {
 }
 
 type Mutex struct {
-	number [THREAD_COUNT]int
+	number []int
 }
 
-func NewMutex() *Mutex {
+func NewMutex(size uint) *Mutex {
 	return &Mutex{
-		number: [THREAD_COUNT]int{},
+		number: make([]int, size),
 	}
 }
 
@@ -136,9 +182,10 @@ func (m *Mutex) maxNumber() int {
 	return max
 }
 
-func (m *Mutex) Lock(i int) {
+func (m *Mutex) Lock(i uint) {
 	m.number[i] = 1 + m.maxNumber()
-	for j := 0; j < THREAD_COUNT; j++ {
+	var j uint
+	for j = 0; j < threadCount; j++ {
 		for m.number[j] != 0 && (m.number[j] < m.number[i] || (m.number[j] == m.number[i] && j < i)) {
 			// Wait until all threads with smaller numbers or with the same
 			// number, but with higher priority, finish their work
@@ -146,7 +193,7 @@ func (m *Mutex) Lock(i int) {
 	}
 }
 
-func (m *Mutex) Unlock(i int) {
+func (m *Mutex) Unlock(i uint) {
 	m.number[i] = 0
 }
 
