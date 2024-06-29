@@ -185,7 +185,9 @@ func setupTables() {
 
 	pages_count := pow2(V_MEM_SIZE - PAGE_SIZE)
 	frames_count := pow2(F_MEM_SIZE - PAGE_SIZE)
-	fmt.Printf("Page Table has %d page frames of %s (%s) each\n", frames_count,
+	fmt.Printf("Page Table has %d pages of %s (%s) each\n", pages_count,
+		formatMemory(pow2(PAGE_SIZE), "bits"), formatMemory(bitsToBytes(pow2(PAGE_SIZE)), "bytes"))
+	fmt.Printf("Physical Memory has %d frames of %s (%s) each\n", frames_count,
 		formatMemory(pow2(PAGE_SIZE), "bits"), formatMemory(bitsToBytes(pow2(PAGE_SIZE)), "bytes"))
 	PAGE_TABLE = make([]int, pages_count)
 	F_MEM = make([]number, frames_count)
@@ -229,7 +231,7 @@ func mapVirtualToPhysicalAddress(virtualAddress number) (physicalAddress number)
 			os.Exit(1)
 		}
 	}
-	F_MEM[frameIndex] = virtualAddress
+	F_MEM[frameIndex] = 1 // virtualAddress
 	frameStartingAddress := number(frameIndex) * pageSizeBits
 	physicalAddress = frameStartingAddress + shift
 	return physicalAddress
@@ -241,14 +243,34 @@ func main() {
 
 	handleArgs()
 	setupTables()
+
+	fmt.Println(RESET, BOLD)
+	fmt.Println(colorize(YELLOW, fmt.Sprint(
+		"====================", " Starting Conversions ", "====================")))
+
 	var physicalAddress number
+	physicalAddresses := make([]number, len(V_ADDRS))
 	for i := 0; i < len(V_ADDRS); i++ {
 		fmt.Printf("\nVirtual Address %d: %d\n", i, V_ADDRS[i])
 		physicalAddress = mapVirtualToPhysicalAddress(V_ADDRS[i])
+		physicalAddresses[i] = physicalAddress
 		fmt.Printf("Physical Address %d: %d\n", i, physicalAddress)
 		fmt.Println("Page Table: ", PAGE_TABLE)
 		fmt.Println("Physical Memory: ", F_MEM)
 	}
+
+	fmt.Println(RESET, BOLD)
+	fmt.Println(colorize(YELLOW, fmt.Sprint(
+		"====================", " OUTPUT ", "====================")))
+
+	fmt.Println(colorize(CYAN, fmt.Sprint(
+		"Virtual Addresses:\t", V_ADDRS)))
+	fmt.Println(colorize(MAGENTA, fmt.Sprint(
+		"Physical Addresses:\t", physicalAddresses)))
+	fmt.Println(colorize(GREEN, fmt.Sprint(
+		"Page Table:\t\t", PAGE_TABLE)))
+	fmt.Println(colorize(MAGENTA, fmt.Sprint(
+		"Physical Memory:\t", F_MEM)))
 
 	fmt.Println(RESET)
 }
