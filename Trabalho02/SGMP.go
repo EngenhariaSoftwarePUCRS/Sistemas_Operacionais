@@ -36,7 +36,7 @@ var (
 	// Physical Memory
 	F_MEM []uint
 	// Page Table
-	PAGE_TABLE []uint
+	PAGE_TABLE []int
 
 	// Random Seed
 	RAND_SEED uint
@@ -104,6 +104,8 @@ func colorize(color string, text string) string {
 // Handles the arguments passed to the program
 // Exits the program if the arguments are invalid
 func handleArgs() {
+	fmt.Println()
+
 	if len(os.Args) < 6 {
 		fmt.Println("\nUseful arguments missing")
 		fmt.Printf("Usage: go run SGMP.go %s <V = Virtual Memory Size> %s <F = Physical Memory Size> %s <P = Page Size> %s <Optional: S = Random Seed> %s <Optional: A = The Amount of Virtual Addresses to Generate if One, the Virtual Addresses if More>\n", CYAN, MAGENTA, GREEN, BLUE, YELLOW)
@@ -161,11 +163,29 @@ func handleArgs() {
 	}
 }
 
+func setupTables() {
+	fmt.Println()
+
+	frames_count := pow2(F_MEM_SIZE - PAGE_SIZE)
+	fmt.Printf("Page Table has %d page frames of %s (%s) each\n", frames_count,
+		formatMemory(pow2(PAGE_SIZE), "bits"), formatMemory(bitsToBytes(pow2(PAGE_SIZE)), "bytes"))
+	F_MEM = make([]uint, frames_count)
+	PAGE_TABLE = make([]int, len(F_MEM))
+
+	for i := 0; i < len(F_MEM); i++ {
+		F_MEM[i] = 0
+		PAGE_TABLE[i] = -1
+	}
+
+	fmt.Printf("Physical Memory and Page Table initialized with %ds and %ds, respectively\n", 0, -1)
+}
+
 func main() {
 	fmt.Println(RESET, BOLD)
 	fmt.Println("=====", "Sistema Gerência de Memória Paginada", "=====")
 
 	handleArgs()
+	setupTables()
 
 	fmt.Println(RESET)
 }
