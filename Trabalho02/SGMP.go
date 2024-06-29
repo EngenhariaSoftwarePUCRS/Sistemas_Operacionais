@@ -11,6 +11,8 @@ const (
 	DEFAULT_V_MEM_SIZE = 16
 	DEFAULT_F_MEM_SIZE = 15
 	DEFAULT_PAGE_SIZE = 12
+	DEFAULT_SEED = 42
+	DEFAULT_V_ADDRS_COUNT = 5
 
 	// Console Editing
 	BOLD = "\033[1m"
@@ -31,12 +33,15 @@ var (
 	// Page Size
 	PAGE_SIZE uint
 
-	// Virtual Memory
-	V_MEM []uint
 	// Physical Memory
 	F_MEM []uint
 	// Page Table
 	PAGE_TABLE []uint
+
+	// Random Seed
+	RAND_SEED uint
+	// Virtual Addresses
+	V_ADDRS []uint
 )
 
 // Returns the argument at the given index or the default value if it was not provided
@@ -45,10 +50,8 @@ func getArg(index int, defaul uint) uint {
 	if len(os.Args) > index {
 		value, err := strconv.Atoi(os.Args[index])
 		if err != nil || value < 0 {
-			fmt.Printf(
-				"%s Invalid argument %d: %d. Must be a non-negative integer. %s\n",
-				RED, index, value, RESET,
-			)
+			fmt.Println(colorize(RED, fmt.Sprintf(
+				"Invalid argument %d: %s. Must be a non-negative integer.", index, os.Args[index])))
 			os.Exit(1)
 		}
 		return uint(value)
@@ -93,31 +96,76 @@ func formatMemory(memory uint, unit string) string {
 	return fmt.Sprintf("%d T%s", memory/1024/1024/1024/1024, ending)
 }
 
-func main() {
-	fmt.Println(RESET, BOLD)
-	fmt.Println("=====", "Sistema Gerência de Memória Paginada", "=====")
-	
-	if len(os.Args) < 3 {
+// Returns a string formatted to be printed with color
+func colorize(color string, text string) string {
+	return fmt.Sprintf("%s%s%s", color, text, RESET)
+}
+
+// Handles the arguments passed to the program
+// Exits the program if the arguments are invalid
+func handleArgs() {
+	if len(os.Args) < 6 {
 		fmt.Println("\nUseful arguments missing")
-		fmt.Printf("Usage: go run SGMP.go %s <V = Virtual Memory Size> %s <F = Physical Memory Size> %s <P = Page Size>\n", CYAN, MAGENTA, GREEN)
+		fmt.Printf("Usage: go run SGMP.go %s <V = Virtual Memory Size> %s <F = Physical Memory Size> %s <P = Page Size> %s <Optional: S = Random Seed> %s <Optional: A = The Amount of Virtual Addresses to Generate if One, the Virtual Addresses if More>\n", CYAN, MAGENTA, GREEN, BLUE, YELLOW)
 		fmt.Println(RESET, BOLD)
 		fmt.Printf("All sizes are in 2^n (bits). i.e. 2^%d = %s = %s\n",
 			10, formatMemory(pow2(10), "bits"), formatMemory(bitsToBytes(pow2(10)), "bytes"))
-		fmt.Println("Example: go run SGMP.go 64 32 12")
-		fmt.Print(RESET, BOLD)
+		fmt.Printf("Example: go run SGMP.go %s %s %s %s %s\n",
+			colorize(CYAN, fmt.Sprint(DEFAULT_V_MEM_SIZE)),
+			colorize(MAGENTA, fmt.Sprint(DEFAULT_F_MEM_SIZE)),
+			colorize(GREEN, fmt.Sprint(DEFAULT_PAGE_SIZE)),
+			colorize(BLUE, fmt.Sprint(DEFAULT_SEED)),
+			colorize(YELLOW, fmt.Sprint(DEFAULT_V_ADDRS_COUNT)),
+		)
+		fmt.Print(BOLD)
 		fmt.Println("Using default values to fill non-provided arguments")
 	}
+	
 	V_MEM_SIZE = getArg(1, DEFAULT_V_MEM_SIZE)
 	F_MEM_SIZE = getArg(2, DEFAULT_F_MEM_SIZE)
 	PAGE_SIZE = getArg(3, DEFAULT_PAGE_SIZE)
+	RAND_SEED = getArg(4, DEFAULT_SEED)
 
-	fmt.Printf("%s\tVirtual Memory Size:\t2^%d = %s = %s\n", CYAN, V_MEM_SIZE,
-		formatMemory(pow2(V_MEM_SIZE), "bits"), formatMemory(bitsToBytes(pow2(V_MEM_SIZE)), "bytes"))
+	fmt.Println(colorize(CYAN,
+		fmt.Sprintf("\tVirtual Memory Size:\t2^%d = %s = %s", V_MEM_SIZE,
+			formatMemory(pow2(V_MEM_SIZE), "bits"), formatMemory(bitsToBytes(pow2(V_MEM_SIZE)), "bytes")),
+	))
 
-	fmt.Printf("%s\tPhysical Memory Size:\t2^%d = %s = %s\n", MAGENTA, F_MEM_SIZE,
-		formatMemory(pow2(F_MEM_SIZE), "bits"), formatMemory(bitsToBytes(pow2(F_MEM_SIZE)), "bytes"))
+	fmt.Println(colorize(MAGENTA,
+		fmt.Sprintf("\tPhysical Memory Size:\t2^%d = %s = %s", F_MEM_SIZE,
+			formatMemory(pow2(F_MEM_SIZE), "bits"), formatMemory(bitsToBytes(pow2(F_MEM_SIZE)), "bytes")),
+	))
 
-	fmt.Printf("%s\tPage Size:\t\t2^%d = %s = %s\n", GREEN, PAGE_SIZE,
-		formatMemory(pow2(PAGE_SIZE), "bits"), formatMemory(bitsToBytes(pow2(PAGE_SIZE)), "bytes"))
+	fmt.Println(colorize(GREEN,
+		fmt.Sprintf("\tPage Size:\t\t2^%d = %s = %s", PAGE_SIZE,
+			formatMemory(pow2(PAGE_SIZE), "bits"), formatMemory(bitsToBytes(pow2(PAGE_SIZE)), "bytes")),
+	))
+
+	fmt.Println(RESET)
+	if len(os.Args) > 6 {
+		V_ADDRS = make([]uint, len(os.Args) - 5)
+		for i := 5; i < len(os.Args); i++ {
+			value, err := strconv.Atoi(os.Args[i])
+			if err != nil || value < 0 {
+				fmt.Println(colorize(RED, fmt.Sprintf(
+					"Invalid argument %d: %s. Must be a non-negative integer.", i, os.Args[i])))
+				os.Exit(1)
+			}
+			V_ADDRS[i-5] = uint(value)
+		}
+		fmt.Printf("Using the following arguments as virtual addresses: %d\n", V_ADDRS)
+	} else {
+		V_ADDRS_COUNT := getArg(5, DEFAULT_V_ADDRS_COUNT)
+		fmt.Printf("Using %s as random seed to generate %s virtual addresses\n",
+			colorize(BLUE, fmt.Sprint(RAND_SEED)), colorize(YELLOW, fmt.Sprint(V_ADDRS_COUNT)))
+	}
+}
+
+func main() {
+	fmt.Println(RESET, BOLD)
+	fmt.Println("=====", "Sistema Gerência de Memória Paginada", "=====")
+
+	handleArgs()
+
 	fmt.Println(RESET)
 }
