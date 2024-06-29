@@ -9,14 +9,17 @@ import (
 )
 
 const (
-	DEFAULT_V_MEM_SIZE = 16
-	DEFAULT_F_MEM_SIZE = 15
-	DEFAULT_PAGE_SIZE = 12
-	DEFAULT_SEED = 42
-	DEFAULT_V_ADDRS_COUNT = 5
+	// Print Intermediate Steps
+	DEBUG = false
 
-	// Should match type "number" (uint32)
-	MAX_UINT32 = 1 << 32 - 1
+	DEFAULT_V_MEM_SIZE = 16 // 40
+	DEFAULT_F_MEM_SIZE = 15 // 37
+	DEFAULT_PAGE_SIZE = 12 // 25
+	DEFAULT_SEED = 42
+	DEFAULT_V_ADDRS_COUNT = 10
+
+	// Should match type "number" (uintMAX_NUMBER)
+	MAX_NUMBER = 64
 
 	// Console Editing
 	BOLD = "\033[1m"
@@ -48,16 +51,16 @@ var (
 	V_ADDRS []number
 )
 
-type number = uint32
+type number = uint64
 
 // Returns the argument at the given index or the default value if it was not provided
 // Exits the program if the argument is not a non-negative integer
 func getArg(index int, defaul number) number {
 	if len(os.Args) > index {
 		value, err := strconv.Atoi(os.Args[index])
-		if err != nil || value < 0 {
+		if err != nil || value < 0 || value > MAX_NUMBER {
 			fmt.Println(colorize(RED, fmt.Sprintf(
-				"Invalid argument %d: %s. Must be a non-negative integer.", index, os.Args[index])))
+				"Invalid argument %d: %s. Must be a non-negative integer up to %d", index, os.Args[index], MAX_NUMBER)))
 			os.Exit(1)
 		}
 		return number(value)
@@ -67,7 +70,8 @@ func getArg(index int, defaul number) number {
 
 // Calculates 2 to the power of the given number and returns it
 func pow2(n number) number {
-	return number(math.Pow(2, float64(n)))
+	power := math.Pow(2, float64(n))
+	return number(power)
 }
 
 // Converts bits to bytes
@@ -96,7 +100,7 @@ func formatMemory(memory number, unit string) string {
 	if memory < pow2(30) {
 		return fmt.Sprintf("%d M%s", memory/1024/1024, ending)
 	}
-	if memory < pow2(40) {
+	if float64(memory) < math.Pow(2, 40) {
 		return fmt.Sprintf("%d G%s", memory/1024/1024/1024, ending)
 	}
 	return fmt.Sprintf("%d T%s", memory/1024/1024/1024/1024, ending)
@@ -105,10 +109,6 @@ func formatMemory(memory number, unit string) string {
 // Returns a string formatted to be printed with color
 func colorize(color string, text string) string {
 	return fmt.Sprintf("%s%s%s", color, text, RESET)
-}
-
-func isValidNumber(n int) bool {
-	return (n >= 0) && (number(n) <= MAX_UINT32)
 }
 
 // Handles the arguments passed to the program
@@ -155,13 +155,14 @@ func handleArgs() {
 	))
 
 	fmt.Println(RESET)
+	upper_v_addr_limit := number(pow2(V_MEM_SIZE) - 1)
 	if len(os.Args) > 6 {
 		V_ADDRS = make([]number, len(os.Args) - 5)
 		for i := 5; i < len(os.Args); i++ {
 			value, err := strconv.Atoi(os.Args[i])
-			if err != nil || !isValidNumber(value) {
+			if err != nil || value < 0 || number(value) > upper_v_addr_limit {
 				fmt.Println(colorize(RED, fmt.Sprintf(
-					"Invalid argument %d: %s. Must be a non-negative integer not larger than %d", i, os.Args[i], MAX_UINT32)))
+					"Invalid argument %d: %s. Must be a non-negative integer up to %d (2^V - 1)", i, os.Args[i], upper_v_addr_limit)))
 				os.Exit(1)
 			}
 			V_ADDRS[i-5] = number(value)
@@ -173,8 +174,7 @@ func handleArgs() {
 			colorize(BLUE, fmt.Sprint(RAND_SEED)), colorize(YELLOW, fmt.Sprint(V_ADDRS_COUNT)))
 		V_ADDRS = make([]number, V_ADDRS_COUNT)
 		for i := 0; i < len(V_ADDRS); i++ {
-			upper_limit := uint32(pow2(V_MEM_SIZE) - 1)
-			V_ADDRS[i] = number(randomizer.Uint32() % upper_limit)
+			V_ADDRS[i] = number(randomizer.Uint32() % uint32(upper_v_addr_limit))
 		}
 		fmt.Printf("Generated virtual addresses: %d\n", V_ADDRS)
 	}
@@ -251,12 +251,14 @@ func main() {
 	var physicalAddress number
 	physicalAddresses := make([]number, len(V_ADDRS))
 	for i := 0; i < len(V_ADDRS); i++ {
-		fmt.Printf("\nVirtual Address %d: %d\n", i, V_ADDRS[i])
 		physicalAddress = mapVirtualToPhysicalAddress(V_ADDRS[i])
 		physicalAddresses[i] = physicalAddress
-		fmt.Printf("Physical Address %d: %d\n", i, physicalAddress)
-		fmt.Println("Page Table: ", PAGE_TABLE)
-		fmt.Println("Physical Memory: ", F_MEM)
+		if DEBUG {
+			fmt.Printf("\nVirtual Address %d: %d\n", i, V_ADDRS[i])
+			fmt.Printf("Physical Address %d: %d\n", i, physicalAddress)
+			fmt.Println("Page Table: ", PAGE_TABLE)
+			fmt.Println("Physical Memory: ", F_MEM)
+		}
 	}
 
 	fmt.Println(RESET, BOLD)
