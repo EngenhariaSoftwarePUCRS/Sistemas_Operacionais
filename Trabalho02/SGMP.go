@@ -15,6 +15,9 @@ const (
 	DEFAULT_SEED = 42
 	DEFAULT_V_ADDRS_COUNT = 5
 
+	// Should match type "number" (uint32)
+	MAX_UINT32 = 1 << 32 - 1
+
 	// Console Editing
 	BOLD = "\033[1m"
 	RED = "\033[31m"
@@ -28,26 +31,28 @@ const (
 
 var (
 	// Virtual Memory Size
-	V_MEM_SIZE uint
+	V_MEM_SIZE number
 	// Physical Memory Size
-	F_MEM_SIZE uint
+	F_MEM_SIZE number
 	// Page Size
-	PAGE_SIZE uint
+	PAGE_SIZE number
 
 	// Physical Memory
-	F_MEM []uint
+	F_MEM []number
 	// Page Table
 	PAGE_TABLE []int
 
 	// Random Seed
-	RAND_SEED uint
+	RAND_SEED number
 	// Virtual Addresses
-	V_ADDRS []uint
+	V_ADDRS []number
 )
+
+type number = uint32
 
 // Returns the argument at the given index or the default value if it was not provided
 // Exits the program if the argument is not a non-negative integer
-func getArg(index int, defaul uint) uint {
+func getArg(index int, defaul number) number {
 	if len(os.Args) > index {
 		value, err := strconv.Atoi(os.Args[index])
 		if err != nil || value < 0 {
@@ -55,24 +60,24 @@ func getArg(index int, defaul uint) uint {
 				"Invalid argument %d: %s. Must be a non-negative integer.", index, os.Args[index])))
 			os.Exit(1)
 		}
-		return uint(value)
+		return number(value)
 	}
 	return defaul
 }
 
 // Calculates 2 to the power of the given number and returns it
-func pow2(n uint) uint {
-	return uint(math.Pow(2, float64(n)))
+func pow2(n number) number {
+	return number(math.Pow(2, float64(n)))
 }
 
 // Converts bits to bytes
-func bitsToBytes(bits uint) uint {
+func bitsToBytes(bits number) number {
 	return bits / 8
 }
 
 // Returns the given number of memory formatted as Kilo, Mega, Giga or Tera {unit}
 // @param unit: bits or bytes
-func formatMemory(memory uint, unit string) string {
+func formatMemory(memory number, unit string) string {
 	var ending string
 	if unit == "bits" {
 		ending = "b"
@@ -100,6 +105,10 @@ func formatMemory(memory uint, unit string) string {
 // Returns a string formatted to be printed with color
 func colorize(color string, text string) string {
 	return fmt.Sprintf("%s%s%s", color, text, RESET)
+}
+
+func isValidNumber(n int) bool {
+	return (n >= 0) && (number(n) <= MAX_UINT32)
 }
 
 // Handles the arguments passed to the program
@@ -147,25 +156,25 @@ func handleArgs() {
 
 	fmt.Println(RESET)
 	if len(os.Args) > 6 {
-		V_ADDRS = make([]uint, len(os.Args) - 5)
+		V_ADDRS = make([]number, len(os.Args) - 5)
 		for i := 5; i < len(os.Args); i++ {
 			value, err := strconv.Atoi(os.Args[i])
-			if err != nil || value < 0 {
+			if err != nil || !isValidNumber(value) {
 				fmt.Println(colorize(RED, fmt.Sprintf(
-					"Invalid argument %d: %s. Must be a non-negative integer.", i, os.Args[i])))
+					"Invalid argument %d: %s. Must be a non-negative integer not larger than %d", i, os.Args[i], MAX_UINT32)))
 				os.Exit(1)
 			}
-			V_ADDRS[i-5] = uint(value)
+			V_ADDRS[i-5] = number(value)
 		}
 		fmt.Printf("Using the following arguments as virtual addresses: %d\n", V_ADDRS)
 	} else {
 		V_ADDRS_COUNT := getArg(5, DEFAULT_V_ADDRS_COUNT)
 		fmt.Printf("Using %s as random seed to generate %s virtual addresses\n",
 			colorize(BLUE, fmt.Sprint(RAND_SEED)), colorize(YELLOW, fmt.Sprint(V_ADDRS_COUNT)))
-		V_ADDRS = make([]uint, V_ADDRS_COUNT)
+		V_ADDRS = make([]number, V_ADDRS_COUNT)
 		for i := 0; i < len(V_ADDRS); i++ {
 			upper_limit := uint32(pow2(V_MEM_SIZE) - 1)
-			V_ADDRS[i] = uint(randomizer.Uint32() % upper_limit)
+			V_ADDRS[i] = number(randomizer.Uint32() % upper_limit)
 		}
 		fmt.Printf("Generated virtual addresses: %d\n", V_ADDRS)
 	}
@@ -174,18 +183,56 @@ func handleArgs() {
 func setupTables() {
 	fmt.Println()
 
+	pages_count := pow2(V_MEM_SIZE - PAGE_SIZE)
 	frames_count := pow2(F_MEM_SIZE - PAGE_SIZE)
 	fmt.Printf("Page Table has %d page frames of %s (%s) each\n", frames_count,
 		formatMemory(pow2(PAGE_SIZE), "bits"), formatMemory(bitsToBytes(pow2(PAGE_SIZE)), "bytes"))
-	F_MEM = make([]uint, frames_count)
-	PAGE_TABLE = make([]int, len(F_MEM))
+	PAGE_TABLE = make([]int, pages_count)
+	F_MEM = make([]number, frames_count)
 
-	for i := 0; i < len(F_MEM); i++ {
-		F_MEM[i] = 0
+	for i := 0; i < len(PAGE_TABLE); i++ {
 		PAGE_TABLE[i] = -1
 	}
 
 	fmt.Printf("Physical Memory and Page Table initialized with %ds and %ds, respectively\n", 0, -1)
+}
+
+// // @Deprecated
+// func splitPageShift(virtual_address number) (page number, shift number) {
+// 	page_length := int(math.Log2(float64(len(F_MEM))))
+// 	virtual_address_str := strconv.Itoa(int(virtual_address))
+// 	page_str := virtual_address_str[:page_length]
+// 	shift_str := virtual_address_str[page_length:]
+// 	page_i, _ := strconv.Atoi(page_str)
+// 	shift_i, _ := strconv.Atoi(shift_str)
+// 	return number(page_i), number(shift_i)
+// }
+
+func mapVirtualToPhysicalAddress(virtualAddress number) (physicalAddress number) {
+	pageSizeBits := pow2(PAGE_SIZE)
+	pageIndex := virtualAddress / pageSizeBits
+	shift := virtualAddress % pageSizeBits
+	frameIndex := PAGE_TABLE[pageIndex]
+	if frameIndex == -1 {
+		physicalMemoryFull := true
+		for i := 0; i < len(F_MEM); i++ {
+			if F_MEM[i] == 0 {
+				PAGE_TABLE[pageIndex] = i
+				frameIndex = i
+				physicalMemoryFull = false
+				break
+			}
+		}
+		if physicalMemoryFull {
+			fmt.Println(colorize(RED, fmt.Sprintln(
+				"Physical Memory is Full, Program Stopping...")))
+			os.Exit(1)
+		}
+	}
+	F_MEM[frameIndex] = virtualAddress
+	frameStartingAddress := number(frameIndex) * pageSizeBits
+	physicalAddress = frameStartingAddress + shift
+	return physicalAddress
 }
 
 func main() {
@@ -194,6 +241,14 @@ func main() {
 
 	handleArgs()
 	setupTables()
+	var physicalAddress number
+	for i := 0; i < len(V_ADDRS); i++ {
+		fmt.Printf("\nVirtual Address %d: %d\n", i, V_ADDRS[i])
+		physicalAddress = mapVirtualToPhysicalAddress(V_ADDRS[i])
+		fmt.Printf("Physical Address %d: %d\n", i, physicalAddress)
+		fmt.Println("Page Table: ", PAGE_TABLE)
+		fmt.Println("Physical Memory: ", F_MEM)
+	}
 
 	fmt.Println(RESET)
 }
