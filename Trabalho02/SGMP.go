@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"strconv"
 )
@@ -127,6 +128,7 @@ func handleArgs() {
 	F_MEM_SIZE = getArg(2, DEFAULT_F_MEM_SIZE)
 	PAGE_SIZE = getArg(3, DEFAULT_PAGE_SIZE)
 	RAND_SEED = getArg(4, DEFAULT_SEED)
+	randomizer := rand.New(rand.NewSource(int64(RAND_SEED)))
 
 	fmt.Println(colorize(CYAN,
 		fmt.Sprintf("\tVirtual Memory Size:\t2^%d = %s = %s", V_MEM_SIZE,
@@ -160,6 +162,12 @@ func handleArgs() {
 		V_ADDRS_COUNT := getArg(5, DEFAULT_V_ADDRS_COUNT)
 		fmt.Printf("Using %s as random seed to generate %s virtual addresses\n",
 			colorize(BLUE, fmt.Sprint(RAND_SEED)), colorize(YELLOW, fmt.Sprint(V_ADDRS_COUNT)))
+		V_ADDRS = make([]uint, V_ADDRS_COUNT)
+		for i := 0; i < len(V_ADDRS); i++ {
+			upper_limit := uint32(pow2(V_MEM_SIZE) - 1)
+			V_ADDRS[i] = uint(randomizer.Uint32() % upper_limit)
+		}
+		fmt.Printf("Generated virtual addresses: %d\n", V_ADDRS)
 	}
 }
 
